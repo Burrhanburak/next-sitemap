@@ -90,6 +90,7 @@ export async function POST(request: Request) {
 
     // URL'leri kategorize et
     const categorizedUrls = await categorizeUrls(limitedUrls);
+    
 
     console.log("URL kategorizasyon özeti:");
     Object.entries(categorizedUrls).forEach(([category, urls]) => {
@@ -135,6 +136,7 @@ export async function POST(request: Request) {
       const type = page.type || 'others';
       updatedCategorized[type].push(page.url);
     });
+    
 
     return NextResponse.json({ 
       results: pageDataArray,

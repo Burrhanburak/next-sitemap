@@ -628,24 +628,7 @@ export default function Home() {
                       />
                     </CardContent>
                   </Card>
-                  
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Static Pages</CardTitle>
-                        <CardDescription>
-                          Found {categoryData.length} static pages
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="p-0">
-                        <DataTable 
-                          contentType="static"
-                          data={categoryData.map((item: any) => ({
-                            ...item,
-                            type: 'static' // Ensure type is never undefined
-                          }))}
-                        />
-                      </CardContent>
-                    </Card>
+                 
 
                 </TabsContent>
 

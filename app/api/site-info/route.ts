@@ -261,9 +261,10 @@ export function extractContentSections(doc: Document): any[] {
 // yeni link kontrolu 
 export function extractStaticPageLinks(doc: Document): any[] {
   const staticPages: any[] = [];
-  const footerMenus = doc.querySelectorAll('.footer-menu');
   const uniqueUrls = new Set<string>();
 
+  // Footer linkleri
+  const footerMenus = doc.querySelectorAll('.footer-menu');
   footerMenus.forEach(menu => {
     const sectionTitleElement = menu.querySelector('.footer-menu-title');
     const sectionTitle = sectionTitleElement?.textContent?.trim() || 'Footer';
@@ -279,7 +280,6 @@ export function extractStaticPageLinks(doc: Document): any[] {
         if (uniqueUrls.has(url)) return;
         uniqueUrls.add(url);
 
-        // Exclude social media and external links
         if (url.match(/facebook\.com|instagram\.com|twitter\.com|pinterest\.com|youtube\.com|linkedin\.com|wa\.me/)) return;
 
         staticPages.push({
@@ -290,6 +290,34 @@ export function extractStaticPageLinks(doc: Document): any[] {
       } catch {}
     });
   });
+
+  // Navigation'daki statik sayfalar
+  const navElement = doc.querySelector('nav#navigation');
+  if (navElement) {
+    const staticItems = navElement.querySelectorAll('li[data-selector="first-level-category"]');
+    staticItems.forEach(item => {
+      const link = item.querySelector('a');
+      if (!link) return;
+
+      const title = link.textContent?.trim();
+      const href = link.getAttribute('href');
+      if (!title || !href) return;
+
+      try {
+        const url = new URL(href, doc.location.href).href;
+        if (uniqueUrls.has(url)) return;
+        uniqueUrls.add(url);
+
+        if (url.match(/facebook\.com|instagram\.com|twitter\.com|pinterest\.com|youtube\.com|linkedin\.com|wa\.me/)) return;
+
+        staticPages.push({
+          title,
+          url,
+          section: 'Navigation'
+        });
+      } catch {}
+    });
+  }
 
   return staticPages;
 }

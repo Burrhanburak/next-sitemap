@@ -273,10 +273,16 @@ export async function categorizeUrls(urls: string[]): Promise<Record<string, str
     others: []
   };
 
+
   for (const url of urls) {
-    const category = await categorizeUrl(url);
-    result[category].push(url);
-    console.log(`Categorized ${url} as ${category}`);
+    try {
+      const category = await categorizeUrl(url);
+      result[category].push(url);
+      console.log(`Categorized ${url} as ${category}`);
+    } catch (error) {
+      console.error(`Error categorizing ${url}:`, error);
+      result.others.push(url);
+    }
   }
 
   console.log(
@@ -286,6 +292,8 @@ export async function categorizeUrls(urls: string[]): Promise<Record<string, str
 
   return result;
 }
+
+
 // Replace your categorizeUrl function with this enhanced version
 // export async function categorizeUrl(url: string): Promise<string> {
 //   if (!url || typeof url !== 'string') {
@@ -387,9 +395,19 @@ export async function categorizeUrl(url: string): Promise<string> {
   const pathname = urlObj.pathname;
 
   // Root page check
-  if (pathname === '/') {
-    console.log(`Categorized ${url} as static (root)`);
-    return 'static';
+  if (pathname === '/') return 'static';
+
+
+  // Product detection for toptanturkiye.com
+  if (pathname.startsWith('/urun/')) {
+    console.log(`Categorized ${url} as product (toptanturkiye pattern)`);
+    return 'product';
+  }
+  
+  // Blog detection for toptanturkiye.com
+  if (pathname.startsWith('/blog/icerik/')) {
+    console.log(`Categorized ${url} as blog (toptanturkiye pattern)`);
+    return 'blog';
   }
 
   // Category check (highest priority)
@@ -409,7 +427,7 @@ export async function categorizeUrl(url: string): Promise<string> {
 
   // Product check
   const productPatterns = [
-    '/urun/', '/product/', '/p/', '/shop/', '/item/', '/product-detail/'
+    '/urun/', '/product/', '/p/', '/shop/', '/item/', '/product-detail/',
   ];
   if (productPatterns.some(pattern => pathname.startsWith(pattern))) {
     console.log(`Categorized ${url} as product (pattern match)`);
@@ -427,20 +445,33 @@ export async function categorizeUrl(url: string): Promise<string> {
     return 'blog';
   }
 
-  // Static check (more specific)
   const staticPatterns = [
-    '/sayfa/', '/page/', '/about/', '/contact/', '/faq/', '/terms/', '/privacy/',
-    '/hakkimizda/', '/iletisim/', '/kurumsal/', '/sss/', '/gizlilik-politikasi/'
+    '/sayfa/', '/page/', '/about', '/contact', 
+    '/faq', '/terms', '/privacy', '/hakkimizda',
+    '/iletisim', '/yardim', '/help', '/support',
+    '/gizlilik', '/sss', '/sikca-sorulan-sorular',
+    '/shipping', '/returns', '/iade', '/kargom-nerede',
+    '/indirimli-urunler' // Örnek eklenen yeni statik sayfa
   ];
-  if (staticPatterns.some(pattern => pathname.startsWith(pattern))) {
-    console.log(`Categorized ${url} as static (pattern match)`);
+  
+  // startsWith ile kesin eşleme + parametre kontrolü
+  const cleanPath = pathname.split('?')[0];
+  if (staticPatterns.some(pattern => cleanPath.startsWith(pattern))) {
     return 'static';
   }
 
+  // // 6. Özel durumlar için son kontrol
+  // const pathSegments = cleanPath.split('/').filter(Boolean);
+  // if (pathSegments.length === 1 && !cleanPath.includes('-')) {
+  //   return 'static';
+  // }
   // Default to 'others'
+
+  
   console.log(`Categorized ${url} as others (default)`);
   return 'others';
 }
+
 export async function extractPageData(url: string): Promise<PageData> {
   try {
     // Basic fetch with timeout
@@ -1399,6 +1430,110 @@ export async function ensureSingleUrlData(url: string, category: string): Promis
   }
 }
 
+
+// Add this function to crawl category pages for products
+async function extractProductUrlsFromCategories(categoryUrls: string[]): Promise<string[]> {
+  console.log(`Crawling ${categoryUrls.length} category pages to find product URLs...`);
+  const productUrls: string[] = [];
+  const uniqueUrls = new Set<string>();
+  
+  // Process in smaller batches to avoid overwhelming the server
+  for (let i = 0; i < Math.min(10, categoryUrls.length); i++) {
+    try {
+      const url = categoryUrls[i];
+      console.log(`Crawling category: ${url}`);
+      
+      const response = await axiosInstance.get(url, { 
+        timeout: 15000,
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SitemapCrawler/1.0)' }
+      });
+      
+      const dom = new JSDOM(response.data);
+      const { document } = dom.window;
+      
+      // Find all links
+      const links = document.querySelectorAll('a[href]');
+      links.forEach(link => {
+        const href = link.getAttribute('href');
+        if (!href) return;
+        
+        try {
+          // Convert to absolute URL
+          const productUrl = new URL(href, url).href;
+          
+          // Check if it's a product URL (using your existing patterns)
+          if (
+            productUrl.includes('/urun/') && 
+            !productUrl.includes('/kategori/') &&
+            !uniqueUrls.has(productUrl)
+          ) {
+            uniqueUrls.add(productUrl);
+            productUrls.push(productUrl);
+            console.log(`Found product URL: ${productUrl}`);
+          }
+        } catch (e) {
+          // Skip invalid URLs
+        }
+      });
+    } catch (error) {
+      console.error(`Error crawling category page: ${categoryUrls[i]}`, error);
+    }
+  }
+  
+  console.log(`Found ${productUrls.length} product URLs from category pages`);
+  return productUrls;
+}
+
+// Similarly, add a function to find blog posts from blog categories
+async function extractBlogUrlsFromSite(baseUrl: string): Promise<string[]> {
+  console.log(`Crawling blog pages from site: ${baseUrl}...`);
+  const blogUrls: string[] = [];
+  const uniqueUrls = new Set<string>();
+  
+  try {
+    // First try the main blog page
+    const blogPageUrl = `${baseUrl.replace(/\/+$/, '')}/blog`;
+    console.log(`Checking blog page: ${blogPageUrl}`);
+    
+    const response = await axiosInstance.get(blogPageUrl, { 
+      timeout: 15000,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SitemapCrawler/1.0)' }
+    });
+    
+    const dom = new JSDOM(response.data);
+    const { document } = dom.window;
+    
+    // Find all links
+    const links = document.querySelectorAll('a[href]');
+    links.forEach(link => {
+      const href = link.getAttribute('href');
+      if (!href) return;
+      
+      try {
+        const blogUrl = new URL(href, blogPageUrl).href;
+        
+        // Check if it's a blog post URL
+        if (
+          blogUrl.includes('/blog/icerik/') && 
+          !blogUrl.includes('/kategori/') &&
+          !uniqueUrls.has(blogUrl)
+        ) {
+          uniqueUrls.add(blogUrl);
+          blogUrls.push(blogUrl);
+          console.log(`Found blog URL: ${blogUrl}`);
+        }
+      } catch (e) {
+        // Skip invalid URLs
+      }
+    });
+  } catch (error) {
+    console.error(`Error crawling blog page`, error);
+  }
+  
+  console.log(`Found ${blogUrls.length} blog URLs`);
+  return blogUrls;
+}
+
 // Add this after ensureSingleUrlData function
 /**
  * Process all pages and ensure they have proper type information
@@ -1407,12 +1542,25 @@ export async function ensureSingleUrlData(url: string, category: string): Promis
  */
 export async function processAllUrls(urls: string[]): Promise<Record<string, PageData>> {
   console.log(`Processing ${urls.length} URLs from sitemap`);
+   // Add this debug section
+   for (let i = 0; i < Math.min(5, urls.length); i++) {
+    const url = urls[i];
+    const parsed = new URL(url);
+    console.log(`URL ${i+1}: ${url}`);
+    console.log(`  Path: ${parsed.pathname}`);
+    console.log(`  Path segments: ${parsed.pathname.split('/').filter(Boolean).length}`);
+    console.log(`  Contains '-': ${parsed.pathname.includes('-')}`);
+    console.log(`  Contains numeric: ${/\d+/.test(parsed.pathname)}`);
+  }
+  console.log("==========================");
   const categorizedUrls: Record<string, string[]> = {
     product: [],
     category: [],
     blog: [],
-    static: []
+    static: [],
+    others: []
   };
+  
   for (const url of urls) {
     const category = await categorizeUrl(url);
     categorizedUrls[category].push(url);
@@ -1424,6 +1572,23 @@ export async function processAllUrls(urls: string[]): Promise<Record<string, Pag
   // Categorize URLs first
   console.log('URL categorization complete');
   console.log('Categorized URLs counts:', Object.keys(categorizedUrls).map(key => `${key}: ${categorizedUrls[key]?.length || 0}`));
+  
+
+   // ENHANCEMENT: Extract product URLs from category pages
+   if (categorizedUrls.category.length > 0 && categorizedUrls.product.length === 0) {
+    console.log("No product URLs found in sitemap, extracting from category pages...");
+    const productUrls = await extractProductUrlsFromCategories(categorizedUrls.category);
+    categorizedUrls.product = productUrls;
+  }
+  
+  // ENHANCEMENT: Extract blog URLs from blog section
+  if (categorizedUrls.blog.length === 0) {
+    console.log("No blog URLs found in sitemap, extracting from blog pages...");
+    // Get the base URL from any URL in the list
+    const baseUrl = new URL(urls[0]).origin;
+    const blogUrls = await extractBlogUrlsFromSite(baseUrl);
+    categorizedUrls.blog = blogUrls;
+  }
   
   // Discover blog posts from blog category pages
   const blogCategoryUrls = categorizedUrls.category.filter(url => url.toLowerCase().includes('/blog/'));
@@ -1587,6 +1752,8 @@ export async function processSitemap(siteUrl: string): Promise<{
   
   // Ensure we have at least some static, blog and category pages
   pageData = await ensureMinimumPageTypes(siteUrl, pageData);
+
+  console.log("pageData after ensureMinimumPageTypes:", Object.values(pageData).filter(p => p.type === 'static'));
   
   // Force add a blog post if none exist
   if (!Object.values(pageData).some(item => item.type === 'blog')) {
